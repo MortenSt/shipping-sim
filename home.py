@@ -10,10 +10,9 @@ if 'authenticated' not in st.session_state:
 
 def check_password():
     # Looks for 'site_password' in your secrets file
-    if st.secrets.get("general", {}).get("site_password") == st.session_state['password_input']:
-        st.session_state['authenticated'] = True
-    elif st.secrets.get("general", {}).get("site_password") is None:
-        st.warning("No password set in Secrets. allowing access for testing.")
+    # If no secrets file exists, we allow access (for testing purposes)
+    secret_pass = st.secrets.get("general", {}).get("site_password")
+    if secret_pass is None or secret_pass == st.session_state['password_input']:
         st.session_state['authenticated'] = True
     else:
         st.error("Incorrect password")
@@ -27,12 +26,19 @@ if not st.session_state['authenticated']:
 # 🚢 THE APP STARTS HERE
 # =========================================================
 
-st.title("⚓ Shipping Portfolio Simulator")
+st.title("⚓ Shipping Portfolio (NOK)")
 
-# --- 2. SETUP PORTFOLIO DEFAULTS ---
+# --- 2. GLOBAL SETTINGS (USD/NOK) ---
+with st.sidebar:
+    st.header("💱 Currency Settings")
+    usd_nok = st.number_input("USD/NOK Exchange Rate", value=11.0, step=0.1, format="%.2f")
+    st.divider()
+
+# --- 3. SETUP PORTFOLIO DEFAULTS ---
 companies = ["Himalaya", "MPCC", "HAUTO", "Bruton", "BW LPG", "Odfjell"]
 
 if 'portfolio' not in st.session_state:
+    # Default structure
     st.session_state['portfolio'] = {ticker: {"shares": 0, "gav": 0.0} for ticker in companies}
     
     # OWNER AUTO-LOAD: Check if "my_portfolio" exists in secrets
@@ -46,7 +52,7 @@ if 'portfolio' not in st.session_state:
 if 'projections' not in st.session_state:
     st.session_state['projections'] = {ticker: 0.0 for ticker in companies}
 
-# --- 3. FRIEND ZONE: FILE UPLOADER ---
+# --- 4. FRIEND ZONE: FILE UPLOADER ---
 with st.sidebar.expander("📂 Load Portfolio File"):
     uploaded_file = st.file_uploader("Drag your JSON file here", type=['json'])
     if uploaded_file is not None:
@@ -59,57 +65,75 @@ with st.sidebar.expander("📂 Load Portfolio File"):
         except Exception as e:
             st.error(f"Error reading file: {e}")
 
-# --- 4. MANUAL ADJUSTMENTS (Sidebar) ---
-st.sidebar.header("💼 Adjust Positions")
+# --- 5. MANUAL ADJUSTMENTS (Sidebar) ---
+st.sidebar.header("💼 Adjust Positions (NOK)")
 for ticker in companies:
     with st.sidebar.expander(ticker):
         curr_s = st.session_state['portfolio'][ticker]['shares']
         curr_g = st.session_state['portfolio'][ticker]['gav']
         
+        # NOTE: GAV is now clearly labeled as NOK
         s = st.number_input(f"Shares", value=curr_s, key=f"{ticker}_s")
-        g = st.number_input(f"GAV", value=curr_g, key=f"{ticker}_g")
+        g = st.number_input(f"Avg Cost (NOK)", value=curr_g, key=f"{ticker}_g")
         st.session_state['portfolio'][ticker] = {"shares": s, "gav": g}
 
-# --- 5. DASHBOARD DISPLAY ---
-st.subheader("📊 Live Projections")
-st.info("Edit market assumptions in the sidebar pages to update these dividends.")
+# --- 6. DASHBOARD DISPLAY ---
+st.subheader(f"📊 Projected Income @ {usd_nok} USD/NOK")
+st.info("Dividends are calculated in USD by the simulators, then converted to NOK here.")
 
-total_income = 0
-total_invested = 0
+total_income_nok = 0
+total_invested_nok = 0
 data = []
 
 for ticker in companies:
     p = st.session_state['portfolio'][ticker]
     shares = p['shares']
-    gav = p['gav']
-    div = st.session_state['projections'].get(ticker, 0.0)
+    gav_nok = p['gav']
     
-    income = shares * div
-    invested = shares * gav
+    # Get the USD dividend from the simulator pages
+    div_usd = st.session_state['projections'].get(ticker, 0.0)
     
-    total_income += income
-    total_invested += invested
+    # CONVERSION LOGIC
+    div_nok = div_usd * usd_nok
+    income_nok = shares * div_nok
+    invested_nok = shares * gav_nok
+    
+    total_income_nok += income_nok
+    total_invested_nok += invested_nok
     
     if shares > 0:
-        yoc = (div * 4 / gav) * 100 if gav > 0 else 0
+        # Yield is (Annualized NOK Dividend / NOK Cost Basis)
+        yoc = (div_nok * 4 / gav_nok) * 100 if gav_nok > 0 else 0
+        
         data.append({
             "Ticker": ticker, 
             "Shares": f"{shares:,}", 
-            "Proj. Div (Qtr)": f"${div:.3f}", 
-            "My Income": f"${income:,.2f}",
-            "Yield on Cost": f"{yoc:.1f}%"
+            "Div (USD)": f"${div_usd:.3f}", 
+            "Div (NOK)": f"{div_nok:.2f} kr", 
+            "My Income (NOK)": f"{income_nok:,.0f} kr",
+            "Yield (NOK)": f"{yoc:.1f}%"
         })
 
 df = pd.DataFrame(data)
+
 if not df.empty:
+    # Display the table
     st.dataframe(df, use_container_width=True)
+    
+    # Display the Big Metrics
+    st.divider()
     c1, c2, c3 = st.columns(3)
-    c1.metric("Total Invested", f"${total_invested:,.0f}")
-    c2.metric("Quarterly Check", f"${total_income:,.2f}")
-    if total_invested > 0:
-        c3.metric("Portfolio Yield", f"{(total_income*4/total_invested)*100:.1f}%")
+    
+    c1.metric("Total Invested (NOK)", f"{total_invested_nok:,.0f} kr")
+    
+    # Conditional formatting for income
+    c2.metric("Quarterly Check (NOK)", f"{total_income_nok:,.0f} kr", f"USD Rate: {usd_nok}")
+    
+    if total_invested_nok > 0:
+        portfolio_yield = (total_income_nok * 4 / total_invested_nok) * 100
+        c3.metric("Portfolio Yield", f"{portfolio_yield:.1f}%")
 else:
-    st.warning("No positions found. Enter shares in the sidebar or upload a file.")
+    st.warning("No positions found. Enter shares in the sidebar to see calculations.")
 
 # Download Button
 if st.sidebar.button("💾 Download Portfolio Config"):
