@@ -5,13 +5,15 @@ import json
 st.set_page_config(page_title="Shipping Alpha", page_icon="⚓", layout="wide")
 
 # --- 1. THE BOUNCER (Global Password) ---
-# We check if the user has entered the correct password
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 
 def check_password():
-    # Uses the password stored in Streamlit Secrets
-    if st.session_state['password_input'] == st.secrets["general"]["site_password"]:
+    # Looks for 'site_password' in your secrets file
+    if st.secrets.get("general", {}).get("site_password") == st.session_state['password_input']:
+        st.session_state['authenticated'] = True
+    elif st.secrets.get("general", {}).get("site_password") is None:
+        st.warning("No password set in Secrets. allowing access for testing.")
         st.session_state['authenticated'] = True
     else:
         st.error("Incorrect password")
@@ -19,13 +21,13 @@ def check_password():
 if not st.session_state['authenticated']:
     st.title("🔒 Private Access Only")
     st.text_input("Enter Access Code:", type="password", key="password_input", on_change=check_password)
-    st.stop()  # Stops the rest of the app from loading
+    st.stop()
 
 # =========================================================
-# 🚢 THE APP STARTS HERE (Only runs if password is correct)
+# 🚢 THE APP STARTS HERE
 # =========================================================
 
-st.title("⚓ Private Shipping Portfolio")
+st.title("⚓ Shipping Portfolio Simulator")
 
 # --- 2. SETUP PORTFOLIO DEFAULTS ---
 companies = ["Himalaya", "MPCC", "HAUTO", "Bruton", "BW LPG", "Odfjell"]
@@ -35,12 +37,11 @@ if 'portfolio' not in st.session_state:
     
     # OWNER AUTO-LOAD: Check if "my_portfolio" exists in secrets
     if "my_portfolio" in st.secrets:
-        # Load Owner Data
+        st.toast("Owner Identity Recognized. Portfolio Loaded.", icon="👑")
         for ticker in companies:
             if ticker in st.secrets["my_portfolio"]:
                 data = st.secrets["my_portfolio"][ticker]
                 st.session_state['portfolio'][ticker] = {"shares": data['shares'], "gav": data['gav']}
-        st.toast("Owner Identity Recognized. Portfolio Loaded.", icon="👑")
 
 if 'projections' not in st.session_state:
     st.session_state['projections'] = {ticker: 0.0 for ticker in companies}
@@ -50,9 +51,7 @@ with st.sidebar.expander("📂 Load Portfolio File"):
     uploaded_file = st.file_uploader("Drag your JSON file here", type=['json'])
     if uploaded_file is not None:
         try:
-            # Parse the uploaded file
             friend_data = json.load(uploaded_file)
-            # Update Session State
             for ticker in companies:
                 if ticker in friend_data:
                     st.session_state['portfolio'][ticker] = friend_data[ticker]
@@ -67,7 +66,6 @@ for ticker in companies:
         curr_s = st.session_state['portfolio'][ticker]['shares']
         curr_g = st.session_state['portfolio'][ticker]['gav']
         
-        # Inputs update session state directly
         s = st.number_input(f"Shares", value=curr_s, key=f"{ticker}_s")
         g = st.number_input(f"GAV", value=curr_g, key=f"{ticker}_g")
         st.session_state['portfolio'][ticker] = {"shares": s, "gav": g}
@@ -97,7 +95,7 @@ for ticker in companies:
         data.append({
             "Ticker": ticker, 
             "Shares": f"{shares:,}", 
-            "Proj. Div": f"${div:.3f}", 
+            "Proj. Div (Qtr)": f"${div:.3f}", 
             "My Income": f"${income:,.2f}",
             "Yield on Cost": f"{yoc:.1f}%"
         })
@@ -105,7 +103,6 @@ for ticker in companies:
 df = pd.DataFrame(data)
 if not df.empty:
     st.dataframe(df, use_container_width=True)
-    
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Invested", f"${total_invested:,.0f}")
     c2.metric("Quarterly Check", f"${total_income:,.2f}")
@@ -114,7 +111,7 @@ if not df.empty:
 else:
     st.warning("No positions found. Enter shares in the sidebar or upload a file.")
 
-# Download Button (So friends can save their changes)
+# Download Button
 if st.sidebar.button("💾 Download Portfolio Config"):
     json_str = json.dumps(st.session_state['portfolio'])
     st.sidebar.download_button(
