@@ -16,18 +16,21 @@ with st.sidebar:
     st.header("⚙️ Konfigurasjon")
     
     # --- SEKSJON A: FLÅTE ---
-    with st.expander("1. Flåte & Strategi", expanded=False):
+    with st.expander("1. Flåte & Strategi", expanded=True): # Default expanded for å vise 6/6 split
         total_fleet = st.number_input("Antall Skip", value=12, step=1)
-        fixed_ships = st.slider("Skip på Fastpris", 0, total_fleet, 0)
+        
+        # PROGNOSE-TALL: 6 Skip på fastpris
+        fixed_ships = st.slider("Skip på Fastpris", 0, total_fleet, 6) 
         spot_ships = total_fleet - fixed_ships
         
         fixed_rate = 0
         if fixed_ships > 0:
-            fixed_rate = st.number_input("Fastpris Rate ($/dag)", value=30000, step=500)
+            # PROGNOSE-TALL: $38,300
+            fixed_rate = st.number_input("Fastpris Rate ($/dag)", value=38300, step=100)
     
     st.markdown("---")
 
-    # --- SEKSJON B: SCRUBBER & DRIVSTOFF (LOGIKK FIKSET) ---
+    # --- SEKSJON B: SCRUBBER & DRIVSTOFF ---
     st.subheader("2. Scrubber & LNG")
     
     scrubber_mode = st.radio(
@@ -37,26 +40,24 @@ with st.sidebar:
     )
 
     scrubber_bonus_net = 0.0
-    scrubber_share_pct = 1.0 # Default 100% i enkel modus (for visning)
-    scrubber_bonus_gross = 0.0 # Kun for avansert visning
+    scrubber_share_pct = 1.0 
+    scrubber_bonus_gross = 0.0 
 
     if scrubber_mode == "Enkel (Netto Beløp)":
-        # HER: Brukeren skriver inn det ferdige tallet rederiet mottar
+        # PROGNOSE-TUNING: Satt til 2300 for å treffe total spot på $50,600 med BDI 35k
         scrubber_bonus_net = st.number_input(
             "Netto Premium til HSHP ($/dag)", 
-            value=2500, 
+            value=2300, 
             step=100,
             help="Beløpet HSHP sitter igjen med etter deling med charterer."
         )
-        scrubber_share_pct = 1.0 # Vi regner dette som 100% av inputen
+        scrubber_share_pct = 1.0 
     
     else: # Avansert modus
-        # HER: Nå ligger prosent-andelen KUN i den avanserte delen
         scrubber_share_pct = st.number_input(
             "HSHP Eierandel av Benefit (%)", 
             min_value=0.0, max_value=100.0, value=75.0, 
-            step=5.0,
-            help="Hvor stor andel av spreaden beholder rederiet?"
+            step=5.0
         ) / 100
 
         st.write("🌍 **Velg Bunkrings-marked:**")
@@ -82,30 +83,28 @@ with st.sidebar:
         p_lng = st.number_input("LNG", value=def_lng, step=10)
         consumption = st.slider("Forbruk (tonn)", 35, 55, 45)
         
-        # Logikk
         cheapest = min(p_ifo, p_lng)
         fuel_spread = p_vlsfo - cheapest
         scrubber_bonus_gross = max(0, fuel_spread * consumption)
-        
-        # Beregn Netto
         scrubber_bonus_net = scrubber_bonus_gross * scrubber_share_pct
         
         if scrubber_bonus_gross > 0:
-            st.caption(f"Brutto besparelse: ${scrubber_bonus_gross:,.0f}/dag")
             st.success(f"💰 **Netto til HSHP:** ${scrubber_bonus_net:,.0f}/dag")
 
     st.markdown("---")
 
     # --- SEKSJON C: MARKED (SPOT) ---
     st.subheader("3. Spot Marked")
-    bdi_5tc = st.slider("Baltic Capesize Index (5TC)", 10000, 100000, 25000, step=1000)
+    # PROGNOSE-TUNING: BDI 35,000 gir spot rate (uten scrubber) på $48,300
+    bdi_5tc = st.slider("Baltic Capesize Index (5TC)", 10000, 100000, 35000, step=1000)
     premium_pct = st.number_input("HSHP Premium %", value=138, step=1) / 100
     
     st.markdown("---")
     
     # --- SEKSJON D: KOSTNADER ---
     st.subheader("4. Selskap")
-    breakeven = st.number_input("Cash Breakeven ($/dag)", value=24700, step=100)
+    # PROGNOSE-TALL: $24,900
+    breakeven = st.number_input("Cash Breakeven ($/dag)", value=24900, step=100)
     shares = 46650000 
 
 # 4. HOVEDINNHOLD
@@ -114,7 +113,7 @@ st.title("⛰ Himalaya Shipping: Investorguide")
 pdf_url = "https://mortenst.github.io/HSHP/Himalaya_Shipping___investor_guide__29-12-25_.pdf"
 c_link1, c_link2 = st.columns([1, 3])
 c_link1.link_button("📄 Last ned PDF-Guide", pdf_url)
-c_link2.markdown("*Bruk menyen for å justere forutsetningene.*")
+c_link2.markdown("*Standardverdiene er satt i henhold til Desember-estimatet i rapporten.*")
 
 st.divider()
 
@@ -123,12 +122,14 @@ st.divider()
 term_fixed = fixed_ships * fixed_rate
 spot_freight_rate = bdi_5tc * premium_pct
 term_spot = spot_ships * spot_freight_rate
-term_scrubber = total_fleet * scrubber_bonus_net # Alltid Netto tallet her
+term_scrubber = total_fleet * scrubber_bonus_net 
 
 daily_revenue_total = term_fixed + term_spot + term_scrubber
 daily_cost_total = total_fleet * breakeven
 daily_profit = daily_revenue_total - daily_cost_total
 
+# Merk: Vi bruker standard 30.42 dager for å være konsistente over tid, 
+# selv om desember spesifikt har 31 dager.
 monthly_cash_flow = daily_profit * 30.42 
 monthly_dps = max(0, monthly_cash_flow / shares)
 annual_yield_usd = monthly_dps * 12
@@ -140,7 +141,7 @@ c1, c2, c3 = st.columns(3)
 c1.metric(
     "Total Daglig Inntekt", 
     f"${daily_revenue_total:,.0f}", 
-    f"Scrubber: ${scrubber_bonus_net:,.0f} (Netto)"
+    f"Snitt: ${(daily_revenue_total/total_fleet):,.0f}/skip"
 )
 
 c2.metric(
@@ -158,16 +159,13 @@ c3.metric(
 # 7. MATEMATIKKEN (DYNAMISK FORMEL)
 st.markdown("#### 🧮 Slik er regnestykket bygget opp:")
 
-# Vi endrer formelen visuelt basert på modus
 if scrubber_mode == "Enkel (Netto Beløp)":
-    # Enkel formel (uten prosentandel)
     latex_formula = r'''
     \text{Inntekt} = 
     \underbrace{(N_{fast} \times \$_{fast})}_{\text{Fastpris}} + 
     \underbrace{(N_{spot} \times \text{BDI} \times \%_{prem})}_{\text{Spot Frakt}} + 
     \underbrace{(N_{total} \times \$_{netto})}_{\text{Scrubber}}
     '''
-    # Tallene
     latex_numbers = rf'''
     \text{{{daily_revenue_total:,.0f}}} = 
     ({fixed_ships} \times {fixed_rate:,.0f}) + 
@@ -175,14 +173,12 @@ if scrubber_mode == "Enkel (Netto Beløp)":
     ({total_fleet} \times {scrubber_bonus_net:,.0f})
     '''
 else:
-    # Avansert formel (med prosentandel)
     latex_formula = r'''
     \text{Inntekt} = 
     \underbrace{(N_{fast} \times \$_{fast})}_{\text{Fastpris}} + 
     \underbrace{(N_{spot} \times \text{BDI} \times \%_{prem})}_{\text{Spot Frakt}} + 
     \underbrace{(N_{total} \times \$_{brutto} \times \%_{eier})}_{\text{Scrubber (Netto)}}
     '''
-    # Tallene
     latex_numbers = rf'''
     \text{{{daily_revenue_total:,.0f}}} = 
     ({fixed_ships} \times {fixed_rate:,.0f}) + 
@@ -231,4 +227,7 @@ for r in rates:
     row[label] = "0%" if yield_pct < 0 else f"{yield_pct:.1f}%"
 
 st.dataframe(pd.DataFrame([row], index=["Yield"]), use_container_width=True)
-st.caption(f"Tabellen bruker en netto scrubber-gevinst på ${scrubber_bonus_net:,.0f}/dag.")
+if scrubber_mode == "Enkel (Netto Beløp)":
+    st.caption(f"Tabellen bruker en netto scrubber-gevinst på ${scrubber_bonus_net:,.0f}/dag.")
+else:
+    st.caption(f"Tabellen bruker en beregnet scrubber-gevinst basert på {scrubber_share_pct*100:.0f}% eierandel.")
