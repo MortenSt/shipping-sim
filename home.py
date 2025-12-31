@@ -27,74 +27,79 @@ with st.sidebar:
     
     st.markdown("---")
 
-    # --- SEKSJON B: SCRUBBER & DRIVSTOFF (OPPDATERT) ---
+    # --- SEKSJON B: SCRUBBER & DRIVSTOFF (LOGIKK FIKSET) ---
     st.subheader("2. Scrubber & LNG")
     
     scrubber_mode = st.radio(
         "Beregningsmetode:",
-        ["Enkel (Fast sum)", "Avansert (Markedspriser)"],
+        ["Enkel (Netto Beløp)", "Avansert (Markedspriser)"],
         horizontal=True
     )
 
-    scrubber_bonus = 0.0
-    fuel_spread = 0.0 
+    scrubber_bonus_net = 0.0
+    scrubber_share_pct = 1.0 # Default 100% i enkel modus (for visning)
+    scrubber_bonus_gross = 0.0 # Kun for avansert visning
 
-    if scrubber_mode == "Enkel (Fast sum)":
-        scrubber_bonus = st.number_input(
-            "Scrubber/LNG Premium ($/dag)", 
+    if scrubber_mode == "Enkel (Netto Beløp)":
+        # HER: Brukeren skriver inn det ferdige tallet rederiet mottar
+        scrubber_bonus_net = st.number_input(
+            "Netto Premium til HSHP ($/dag)", 
             value=2500, 
             step=100,
-            help="Hvor mye sparer skipet per dag? (Historisk snitt: $2k-$4k)"
+            help="Beløpet HSHP sitter igjen med etter deling med charterer."
         )
+        scrubber_share_pct = 1.0 # Vi regner dette som 100% av inputen
     
     else: # Avansert modus
-        st.info("💡 **Tips:** Hent dagens priser fra **Rotterdam** (stor hub).")
-        
-        # Linker til kildene
-        c_url1, c_url2 = st.columns(2)
-        c_url1.link_button("Oljepriser (Ship&Bunker)", "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam")
-        c_url2.link_button("LNG Priser (Rotterdam)", "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#LNG")
+        # HER: Nå ligger prosent-andelen KUN i den avanserte delen
+        scrubber_share_pct = st.number_input(
+            "HSHP Eierandel av Benefit (%)", 
+            min_value=0.0, max_value=100.0, value=75.0, 
+            step=5.0,
+            help="Hvor stor andel av spreaden beholder rederiet?"
+        ) / 100
 
-        st.caption("Fyll inn prisene under ($/mt):")
+        st.write("🌍 **Velg Bunkrings-marked:**")
+        hub_choice = st.radio("Hub", ["Rotterdam", "Singapore"], label_visibility="collapsed", horizontal=True)
+
+        if hub_choice == "Rotterdam":
+            url_oil = "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam"
+            url_lng = "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#LNG"
+            def_vlsfo, def_ifo, def_lng = 530, 430, 550
+        else: 
+            url_oil = "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore"
+            url_lng = "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#LNG"
+            def_vlsfo, def_ifo, def_lng = 580, 460, 560
+
+        c1, c2 = st.columns(2)
+        c1.link_button("Oljepriser", url_oil)
+        c2.link_button("LNG Priser", url_lng)
+
+        st.caption("Markedspriser ($/mt):")
+        col_f1, col_f2 = st.columns(2)
+        p_vlsfo = col_f1.number_input("VLSFO", value=def_vlsfo, step=10)
+        p_ifo = col_f2.number_input("IFO380", value=def_ifo, step=10)
+        p_lng = st.number_input("LNG", value=def_lng, step=10)
+        consumption = st.slider("Forbruk (tonn)", 35, 55, 45)
         
-        col_fuel1, col_fuel2 = st.columns(2)
+        # Logikk
+        cheapest = min(p_ifo, p_lng)
+        fuel_spread = p_vlsfo - cheapest
+        scrubber_bonus_gross = max(0, fuel_spread * consumption)
         
-        # Vi bruker navnene som står på nettsiden
-        with col_fuel1:
-            price_vlsfo = st.number_input("Pris VLSFO", value=530, step=10, help="Dyr standardolje (0.5% S)")
-            
-        with col_fuel2:
-            # Her presiserer vi at HFO er det samme som IFO380
-            price_ifo380 = st.number_input("Pris IFO380 (HFO)", value=430, step=10, help="Billig olje for scrubbere (3.5% S)")
-            
-        price_lng = st.number_input("Pris LNG", value=550, step=10, help="Flytende naturgass (LNG Bunker)")
+        # Beregn Netto
+        scrubber_bonus_net = scrubber_bonus_gross * scrubber_share_pct
         
-        consumption = st.slider("Forbruk (tonn/dag)", 35, 55, 45, help="Newcastlemax bruker ca 45 tonn.")
-        
-        # LOGIKK:
-        # 1. Finn billigste alternativ (HFO/IFO380 vs LNG)
-        cheapest_fuel_price = min(price_ifo380, price_lng)
-        chosen_fuel_name = "LNG" if price_lng < price_ifo380 else "HFO (IFO380)"
-        
-        # 2. Beregn besparelse mot VLSFO
-        fuel_spread = price_vlsfo - cheapest_fuel_price
-        
-        # 3. Beregn dags-bonus
-        scrubber_bonus = fuel_spread * consumption
-        
-        if scrubber_bonus < 0: 
-            scrubber_bonus = 0 
-            st.warning("⚠️ VLSFO er billigere enn alternativene. Ingen scrubber-bonus.")
-        else:
-            st.success(f"""
-            ✅ **Billigste drivstoff:** {chosen_fuel_name} (${cheapest_fuel_price})
-            \n💰 **Spread:** ${fuel_spread}/tonn
-            \n🚀 **Daglig Bonus:** ${scrubber_bonus:,.0f}
-            """)
+        if scrubber_bonus_gross > 0:
+            st.caption(f"Brutto besparelse: ${scrubber_bonus_gross:,.0f}/dag")
+            st.success(f"💰 **Netto til HSHP:** ${scrubber_bonus_net:,.0f}/dag")
+
+    st.markdown("---")
+
     # --- SEKSJON C: MARKED (SPOT) ---
     st.subheader("3. Spot Marked")
     bdi_5tc = st.slider("Baltic Capesize Index (5TC)", 10000, 100000, 25000, step=1000)
-    premium_pct = st.number_input("HSHP Premium %", value=138, step=1, help="Newcastlemax fordel") / 100
+    premium_pct = st.number_input("HSHP Premium %", value=138, step=1) / 100
     
     st.markdown("---")
     
@@ -109,50 +114,33 @@ st.title("⛰ Himalaya Shipping: Investorguide")
 pdf_url = "https://mortenst.github.io/HSHP/Himalaya_Shipping___investor_guide__29-12-25_.pdf"
 c_link1, c_link2 = st.columns([1, 3])
 c_link1.link_button("📄 Last ned PDF-Guide", pdf_url)
-c_link2.markdown("*Bruk menyen til venstre for å velge mellom enkel eller avansert drivstoff-modellering.*")
+c_link2.markdown("*Bruk menyen for å justere forutsetningene.*")
 
 st.divider()
 
-# 5. BEREGNINGSMOTOR (OPPDATERT MED NY FORMEL)
+# 5. BEREGNINGSMOTOR
 
-# Vi regner ut de tre "bena" inntektene står på hver for seg:
-
-# Ledd 1: Fastpris
-# (Antall skip * Fast Rate)
 term_fixed = fixed_ships * fixed_rate
-
-# Ledd 2: Spot Frakt
-# (Antall skip * Spot Rate * Premium)
 spot_freight_rate = bdi_5tc * premium_pct
 term_spot = spot_ships * spot_freight_rate
+term_scrubber = total_fleet * scrubber_bonus_net # Alltid Netto tallet her
 
-# Ledd 3: Scrubber / LNG Bonus
-# (Antall skip * Scrubber Premium). 
-# NB: Her antar vi at scrubber-bonusen gjelder hele flåten (siden alle skip har scrubbere/LNG).
-# Hvis fastpris-kontrakten er "all-in", må brukeren justere raten deretter.
-term_scrubber = total_fleet * scrubber_bonus
-
-# SUM AV INNTEKTER (Daglig)
 daily_revenue_total = term_fixed + term_spot + term_scrubber
-avg_rate_per_ship = daily_revenue_total / total_fleet
-
-# KOSTNADER OG UTBYTTE
 daily_cost_total = total_fleet * breakeven
 daily_profit = daily_revenue_total - daily_cost_total
 
-# Månedlig kontantstrøm (30.42 dager i snitt)
 monthly_cash_flow = daily_profit * 30.42 
 monthly_dps = max(0, monthly_cash_flow / shares)
 annual_yield_usd = monthly_dps * 12
 
-# 6. DASHBOARD (VISUALISERING)
+# 6. DASHBOARD
 st.subheader("📊 Resultater")
 c1, c2, c3 = st.columns(3)
 
 c1.metric(
     "Total Daglig Inntekt", 
     f"${daily_revenue_total:,.0f}", 
-    f"Snitt: ${avg_rate_per_ship:,.0f}/skip"
+    f"Scrubber: ${scrubber_bonus_net:,.0f} (Netto)"
 )
 
 c2.metric(
@@ -167,38 +155,49 @@ c3.metric(
     f"Årlig takt: ${annual_yield_usd:.2f}"
 )
 
-# 7. MATEMATIKKEN (DIN SPESIFIKKE FORMEL)
+# 7. MATEMATIKKEN (DYNAMISK FORMEL)
 st.markdown("#### 🧮 Slik er regnestykket bygget opp:")
-st.caption("Inntektene beregnes ved å summere fastpris, spot-inntekter og scrubber-bonus separat.")
 
-# Vi bygger LaTeX-strengen dynamisk basert på formelen du ba om:
-# (skip * fast) + (skip * spot * prem) + (skip * scrubber)
+# Vi endrer formelen visuelt basert på modus
+if scrubber_mode == "Enkel (Netto Beløp)":
+    # Enkel formel (uten prosentandel)
+    latex_formula = r'''
+    \text{Inntekt} = 
+    \underbrace{(N_{fast} \times \$_{fast})}_{\text{Fastpris}} + 
+    \underbrace{(N_{spot} \times \text{BDI} \times \%_{prem})}_{\text{Spot Frakt}} + 
+    \underbrace{(N_{total} \times \$_{netto})}_{\text{Scrubber}}
+    '''
+    # Tallene
+    latex_numbers = rf'''
+    \text{{{daily_revenue_total:,.0f}}} = 
+    ({fixed_ships} \times {fixed_rate:,.0f}) + 
+    ({spot_ships} \times {bdi_5tc:,} \times {premium_pct:.2f}) + 
+    ({total_fleet} \times {scrubber_bonus_net:,.0f})
+    '''
+else:
+    # Avansert formel (med prosentandel)
+    latex_formula = r'''
+    \text{Inntekt} = 
+    \underbrace{(N_{fast} \times \$_{fast})}_{\text{Fastpris}} + 
+    \underbrace{(N_{spot} \times \text{BDI} \times \%_{prem})}_{\text{Spot Frakt}} + 
+    \underbrace{(N_{total} \times \$_{brutto} \times \%_{eier})}_{\text{Scrubber (Netto)}}
+    '''
+    # Tallene
+    latex_numbers = rf'''
+    \text{{{daily_revenue_total:,.0f}}} = 
+    ({fixed_ships} \times {fixed_rate:,.0f}) + 
+    ({spot_ships} \times {bdi_5tc:,} \times {premium_pct:.2f}) + 
+    ({total_fleet} \times {scrubber_bonus_gross:,.0f} \times {scrubber_share_pct:.2f})
+    '''
 
-latex_formula = r'''
-\text{Inntekt} = 
-\underbrace{(N_{fast} \times \$_{fast})}_{\text{Fastpris}} + 
-\underbrace{(N_{spot} \times \text{BDI} \times \%_{prem})}_{\text{Spot Frakt}} + 
-\underbrace{(N_{total} \times \$_{scrubber})}_{\text{Scrubber/LNG}}
-'''
 st.latex(latex_formula)
-
-st.markdown("**Med dine tall:**")
-
-# Viser tallene satt inn i formelen
-latex_numbers = rf'''
-\text{{{daily_revenue_total:,.0f}}} = 
-({fixed_ships} \times {fixed_rate:,.0f}) + 
-({spot_ships} \times {bdi_5tc:,} \times {premium_pct:.2f}) + 
-({total_fleet} \times {scrubber_bonus:,.0f})
-'''
+st.markdown(f"**Med dine tall:**")
 st.latex(latex_numbers)
 
 st.divider()
-
-# Sluttresultatet (Utbytte formel)
 st.markdown("**Fra Inntekt til Utbytte:**")
 div_formula = rf'''
-\text{{Utbytte}} = \frac{{(\text{{Inntekt }} {daily_revenue_total:,.0f} - \text{{Kost }} {daily_cost_total:,.0f}) \times 30.42 \text{{ dager}}}}{{46.65 \text{{ mill aksjer}}}} = \mathbf{{\$ {monthly_dps:.3f}}}
+\text{{Utbytte}} = \frac{{({daily_revenue_total:,.0f} - {daily_cost_total:,.0f}) \times 30.42}}{{46.65 \text{{ mill}}}} = \mathbf{{\$ {monthly_dps:.3f}}}
 '''
 st.latex(div_formula)
 
@@ -213,41 +212,23 @@ share_price_nok = col_input1.number_input("Aksjekurs (NOK)", value=82.0)
 usd_nok = col_input2.number_input("USD/NOK", value=11.1)
 
 rates = [20000, 30000, 40000, 50000, 60000, 80000] 
-data = []
 row = {}
 
 for r in rates:
-    # Vi må gjenskape logikken fra formelen over for hvert punkt i tabellen
-    
-    # 1. Fastpris (Endres ikke)
     t_fixed = fixed_ships * fixed_rate
-    
-    # 2. Spot (Endres med tabellen)
     t_spot = spot_ships * (r * premium_pct)
+    t_scrub = total_fleet * scrubber_bonus_net 
     
-    # 3. Scrubber (Endres ikke - basert på ditt valg)
-    t_scrub = total_fleet * scrubber_bonus
-    
-    # Sum
     d_rev = t_fixed + t_spot + t_scrub
     d_profit = d_rev - (total_fleet * breakeven)
     
-    # Utbytte
     ann_div_usd = (d_profit * 365) / shares
     ann_div_nok = ann_div_usd * usd_nok
     
-    # Yield
     yield_pct = (ann_div_nok / share_price_nok) * 100 if share_price_nok > 0 else 0
     
     label = f"Spot-Rate ${r/1000:.0f}k"
-    if yield_pct < 0:
-        row[label] = "0%"
-    else:
-        row[label] = f"{yield_pct:.1f}%"
+    row[label] = "0%" if yield_pct < 0 else f"{yield_pct:.1f}%"
 
 st.dataframe(pd.DataFrame([row], index=["Yield"]), use_container_width=True)
-
-if scrubber_mode == "Avansert (Markedspriser)":
-    st.caption(f"Tabellen bruker beregnet scrubber-bonus på ${scrubber_bonus:,.0f}/dag.")
-else:
-    st.caption(f"Tabellen bruker fast scrubber-bonus på ${scrubber_bonus:,.0f}/dag.")
+st.caption(f"Tabellen bruker en netto scrubber-gevinst på ${scrubber_bonus_net:,.0f}/dag.")
