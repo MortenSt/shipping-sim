@@ -239,8 +239,8 @@ for r in rates:
     
     label = f"Spot-Rate ${r/1000:.0f}k"
     row[label] = "0%" if yield_pct < 0 else f"{yield_pct:.1f}%"
-
-st.dataframe(pd.DataFrame([row], index=["Yield"]), use_container_width=True)
+    
+st.dataframe(pd.DataFrame([row], index=["Yield"]), width="stretch") # Oppdatert parameter
 if scrubber_mode == "Enkel (Netto Beløp)":
     st.caption(f"Tabellen bruker en netto scrubber-gevinst på ${scrubber_bonus_net:,.0f}/dag.")
 else:
