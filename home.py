@@ -30,7 +30,7 @@ with st.sidebar:
     
     st.markdown("---")
 
-    # --- SEKSJON B: SCRUBBER & DRIVSTOFF ---
+  # --- SEKSJON B: SCRUBBER & DRIVSTOFF (RENERE MODELL) ---
     st.subheader("2. Scrubber & LNG")
     
     scrubber_mode = st.radio(
@@ -44,7 +44,7 @@ with st.sidebar:
     scrubber_bonus_gross = 0.0 
 
     if scrubber_mode == "Enkel (Netto Beløp)":
-        # PROGNOSE-TUNING: Satt til 2300 for å treffe total spot på $50,600 med BDI 35k
+        # Dette er tallet fra kvartalsrapporten/PDF-en
         scrubber_bonus_net = st.number_input(
             "Netto Premium til HSHP ($/dag)", 
             value=2300, 
@@ -54,12 +54,14 @@ with st.sidebar:
         scrubber_share_pct = 1.0 
     
     else: # Avansert modus
+        # 1. Eierandel
         scrubber_share_pct = st.number_input(
             "HSHP Eierandel av Benefit (%)", 
-            min_value=0.0, max_value=100.0, value=75.0, 
-            step=5.0
+            min_value=0.0, max_value=100.0, value=75.0, step=5.0,
+            help="Standard er ofte 75% til reder, 25% til charterer."
         ) / 100
 
+        # 2. Velg Marked
         st.write("🌍 **Velg Bunkrings-marked:**")
         hub_choice = st.radio("Hub", ["Rotterdam", "Singapore"], label_visibility="collapsed", horizontal=True)
 
@@ -78,21 +80,33 @@ with st.sidebar:
 
         st.caption("Markedspriser ($/mt):")
         col_f1, col_f2 = st.columns(2)
-        p_vlsfo = col_f1.number_input("VLSFO", value=def_vlsfo, step=10)
-        p_ifo = col_f2.number_input("IFO380", value=def_ifo, step=10)
-        p_lng = st.number_input("LNG", value=def_lng, step=10)
-        consumption = st.slider("Forbruk (tonn)", 35, 55, 45)
+        p_vlsfo = col_f1.number_input("VLSFO", value=def_vlsfo, step=10, help="Dyr standardolje")
+        p_ifo = col_f2.number_input("IFO380", value=def_ifo, step=10, help="Billig olje (Scrubber)")
+        p_lng = st.number_input("LNG", value=def_lng, step=10, help="Naturgass")
         
-        cheapest = min(p_ifo, p_lng)
-        fuel_spread = p_vlsfo - cheapest
+        consumption = st.slider("Forbruk (tonn/dag)", 35, 55, 45)
+        
+        # LOGIKK:
+        # Finn billigste drivstoff (HFO vs LNG)
+        cheapest_price = min(p_ifo, p_lng)
+        fuel_source = "LNG" if p_lng < p_ifo else "HFO (IFO380)"
+        
+        # Beregn spread mot VLSFO
+        fuel_spread = p_vlsfo - cheapest_price
+        
+        # Brutto besparelse
         scrubber_bonus_gross = max(0, fuel_spread * consumption)
+        
+        # Netto til HSHP
         scrubber_bonus_net = scrubber_bonus_gross * scrubber_share_pct
         
         if scrubber_bonus_gross > 0:
-            st.success(f"💰 **Netto til HSHP:** ${scrubber_bonus_net:,.0f}/dag")
-
-    st.markdown("---")
-
+            st.success(f"""
+            ✅ **Billigste drivstoff:** {fuel_source}
+            \n💰 **Netto til HSHP:** ${scrubber_bonus_net:,.0f}/dag
+            """)
+        else:
+            st.warning("Ingen besparelse med dagens priser.")
     # --- SEKSJON C: MARKED (SPOT) ---
     st.subheader("3. Spot Marked")
     # PROGNOSE-TUNING: BDI 35,000 gir spot rate (uten scrubber) på $48,300
