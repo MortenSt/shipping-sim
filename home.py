@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # 1. KONFIGURASJON
-st.set_page_config(page_title="Himalaya Investorguide og utbyttekalkulator", page_icon="⛰", layout="wide")
+st.set_page_config(page_title="Himalaya Shipping: Investorguide og utbyttekalkulator", page_icon="⛰", layout="wide")
 
 # 2. CSS HACK: SKJUL NAVIGASJON
 st.markdown("""
