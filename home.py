@@ -27,53 +27,70 @@ with st.sidebar:
     
     st.markdown("---")
 
-    # --- SEKSJON B: SCRUBBER & DRIVSTOFF (NY LOGIKK) ---
+    # --- SEKSJON B: SCRUBBER & DRIVSTOFF (OPPDATERT) ---
     st.subheader("2. Scrubber & LNG")
     
-    # Her velger brukeren metode
     scrubber_mode = st.radio(
         "Beregningsmetode:",
-        ["Enkel (Fast sum)", "Avansert (Drivstoffpriser)"],
-        help="Velg 'Enkel' for å bruke tall fra kvartalsrapporten. Velg 'Avansert' for å modellere basert på olje/gass-priser."
+        ["Enkel (Fast sum)", "Avansert (Markedspriser)"],
+        horizontal=True
     )
 
     scrubber_bonus = 0.0
-    fuel_spread = 0.0 # Kun for visning
+    fuel_spread = 0.0 
 
     if scrubber_mode == "Enkel (Fast sum)":
         scrubber_bonus = st.number_input(
             "Scrubber/LNG Premium ($/dag)", 
             value=2500, 
             step=100,
-            help="Hvor mye tjener skipet ekstra per dag pga. scrubber/LNG? (Historisk snitt: $2k-$4k)"
+            help="Hvor mye sparer skipet per dag? (Historisk snitt: $2k-$4k)"
         )
     
     else: # Avansert modus
-        st.caption("Priser i USD per tonn")
-        price_vlsfo = st.number_input("Pris VLSFO (Standard)", value=600, step=10)
-        price_hfo = st.number_input("Pris HFO (Scrubber)", value=450, step=10)
-        price_lng = st.number_input("Pris LNG (Olje-ekvivalent)", value=550, step=10, help="Pris justert for brennverdi.")
+        st.info("💡 **Tips:** Hent dagens priser fra **Rotterdam** (stor hub).")
+        
+        # Linker til kildene
+        c_url1, c_url2 = st.columns(2)
+        c_url1.link_button("Oljepriser (Ship&Bunker)", "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam")
+        c_url2.link_button("LNG Priser (Rotterdam)", "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#LNG")
+
+        st.caption("Fyll inn prisene under ($/mt):")
+        
+        col_fuel1, col_fuel2 = st.columns(2)
+        
+        # Vi bruker navnene som står på nettsiden
+        with col_fuel1:
+            price_vlsfo = st.number_input("Pris VLSFO", value=530, step=10, help="Dyr standardolje (0.5% S)")
+            
+        with col_fuel2:
+            # Her presiserer vi at HFO er det samme som IFO380
+            price_ifo380 = st.number_input("Pris IFO380 (HFO)", value=430, step=10, help="Billig olje for scrubbere (3.5% S)")
+            
+        price_lng = st.number_input("Pris LNG", value=550, step=10, help="Flytende naturgass (LNG Bunker)")
         
         consumption = st.slider("Forbruk (tonn/dag)", 35, 55, 45, help="Newcastlemax bruker ca 45 tonn.")
         
-        # LOGIKK: Velg det billigste av HFO og LNG
-        cheapest_fuel = min(price_hfo, price_lng)
-        chosen_fuel_name = "LNG" if price_lng < price_hfo else "HFO"
+        # LOGIKK:
+        # 1. Finn billigste alternativ (HFO/IFO380 vs LNG)
+        cheapest_fuel_price = min(price_ifo380, price_lng)
+        chosen_fuel_name = "LNG" if price_lng < price_ifo380 else "HFO (IFO380)"
         
-        # Besparelse vs VLSFO
-        fuel_spread = price_vlsfo - cheapest_fuel
+        # 2. Beregn besparelse mot VLSFO
+        fuel_spread = price_vlsfo - cheapest_fuel_price
+        
+        # 3. Beregn dags-bonus
         scrubber_bonus = fuel_spread * consumption
         
-        if scrubber_bonus < 0: scrubber_bonus = 0 # Ingen bonus hvis VLSFO er billigst
-        
-        st.markdown(f"""
-        *Valgt drivstoff:* **{chosen_fuel_name}**
-        \n*Spread:* **${fuel_spread}** /tonn
-        \n*Bonus:* **${scrubber_bonus:,.0f}** /dag
-        """)
-
-    st.markdown("---")
-
+        if scrubber_bonus < 0: 
+            scrubber_bonus = 0 
+            st.warning("⚠️ VLSFO er billigere enn alternativene. Ingen scrubber-bonus.")
+        else:
+            st.success(f"""
+            ✅ **Billigste drivstoff:** {chosen_fuel_name} (${cheapest_fuel_price})
+            \n💰 **Spread:** ${fuel_spread}/tonn
+            \n🚀 **Daglig Bonus:** ${scrubber_bonus:,.0f}
+            """)
     # --- SEKSJON C: MARKED (SPOT) ---
     st.subheader("3. Spot Marked")
     bdi_5tc = st.slider("Baltic Capesize Index (5TC)", 10000, 100000, 25000, step=1000)
