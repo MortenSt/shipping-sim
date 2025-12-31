@@ -113,38 +113,52 @@ c_link2.markdown("*Bruk menyen til venstre for å velge mellom enkel eller avans
 
 st.divider()
 
-# 5. BEREGNINGSMOTOR
+# 5. BEREGNINGSMOTOR (OPPDATERT MED NY FORMEL)
 
-# A. Spot Inntekter (Rate + Scrubber Bonus fra logikken over)
-spot_freight = bdi_5tc * premium_pct
-spot_tce = spot_freight + scrubber_bonus
+# Vi regner ut de tre "bena" inntektene står på hver for seg:
 
-# B. Vektet Snitt
-daily_revenue_total = (spot_tce * spot_ships) + (fixed_rate * fixed_ships)
-weighted_avg_tce = daily_revenue_total / total_fleet
+# Ledd 1: Fastpris
+# (Antall skip * Fast Rate)
+term_fixed = fixed_ships * fixed_rate
 
-# C. Kontantstrøm
-daily_margin = weighted_avg_tce - breakeven
-monthly_cash_flow = daily_margin * total_fleet * 30.42 
+# Ledd 2: Spot Frakt
+# (Antall skip * Spot Rate * Premium)
+spot_freight_rate = bdi_5tc * premium_pct
+term_spot = spot_ships * spot_freight_rate
+
+# Ledd 3: Scrubber / LNG Bonus
+# (Antall skip * Scrubber Premium). 
+# NB: Her antar vi at scrubber-bonusen gjelder hele flåten (siden alle skip har scrubbere/LNG).
+# Hvis fastpris-kontrakten er "all-in", må brukeren justere raten deretter.
+term_scrubber = total_fleet * scrubber_bonus
+
+# SUM AV INNTEKTER (Daglig)
+daily_revenue_total = term_fixed + term_spot + term_scrubber
+avg_rate_per_ship = daily_revenue_total / total_fleet
+
+# KOSTNADER OG UTBYTTE
+daily_cost_total = total_fleet * breakeven
+daily_profit = daily_revenue_total - daily_cost_total
+
+# Månedlig kontantstrøm (30.42 dager i snitt)
+monthly_cash_flow = daily_profit * 30.42 
 monthly_dps = max(0, monthly_cash_flow / shares)
 annual_yield_usd = monthly_dps * 12
 
-# 6. DASHBOARD
+# 6. DASHBOARD (VISUALISERING)
 st.subheader("📊 Resultater")
 c1, c2, c3 = st.columns(3)
 
-rate_label = "Oppnådd Rate (TCE)" if fixed_ships == 0 else "Snittrate (TCE)"
-
 c1.metric(
-    rate_label, 
-    f"${weighted_avg_tce:,.0f}", 
-    f"Inkl. Scrubber: ${scrubber_bonus:,.0f}/dag"
+    "Total Daglig Inntekt", 
+    f"${daily_revenue_total:,.0f}", 
+    f"Snitt: ${avg_rate_per_ship:,.0f}/skip"
 )
 
 c2.metric(
-    "Margin per skip", 
-    f"${daily_margin:,.0f}", 
-    f"Breakeven: ${breakeven:,}"
+    "Daglig Overskudd", 
+    f"${daily_profit:,.0f}", 
+    f"Kostnader: -${daily_cost_total:,.0f}"
 )
 
 c3.metric(
@@ -153,20 +167,46 @@ c3.metric(
     f"Årlig takt: ${annual_yield_usd:.2f}"
 )
 
-# 7. MATEMATIKKEN
-st.markdown("#### 🧮 Slik regnes det ut:")
-st.caption("Tallene oppdateres automatisk.")
+# 7. MATEMATIKKEN (DIN SPESIFIKKE FORMEL)
+st.markdown("#### 🧮 Slik er regnestykket bygget opp:")
+st.caption("Inntektene beregnes ved å summere fastpris, spot-inntekter og scrubber-bonus separat.")
 
-calculation_latex = rf'''
-\text{{{monthly_dps:.3f}}} = \frac{{(\text{{Rate }} {weighted_avg_tce:,.0f} - \text{{Kost }} {breakeven:,.0f}) \times {total_fleet} \text{{ skip}} \times 30.4}}{{46.65 \text{{ mill aksjer}}}}
+# Vi bygger LaTeX-strengen dynamisk basert på formelen du ba om:
+# (skip * fast) + (skip * spot * prem) + (skip * scrubber)
+
+latex_formula = r'''
+\text{Inntekt} = 
+\underbrace{(N_{fast} \times \$_{fast})}_{\text{Fastpris}} + 
+\underbrace{(N_{spot} \times \text{BDI} \times \%_{prem})}_{\text{Spot Frakt}} + 
+\underbrace{(N_{total} \times \$_{scrubber})}_{\text{Scrubber/LNG}}
 '''
-st.latex(calculation_latex)
+st.latex(latex_formula)
+
+st.markdown("**Med dine tall:**")
+
+# Viser tallene satt inn i formelen
+latex_numbers = rf'''
+\text{{{daily_revenue_total:,.0f}}} = 
+({fixed_ships} \times {fixed_rate:,.0f}) + 
+({spot_ships} \times {bdi_5tc:,} \times {premium_pct:.2f}) + 
+({total_fleet} \times {scrubber_bonus:,.0f})
+'''
+st.latex(latex_numbers)
+
+st.divider()
+
+# Sluttresultatet (Utbytte formel)
+st.markdown("**Fra Inntekt til Utbytte:**")
+div_formula = rf'''
+\text{{Utbytte}} = \frac{{(\text{{Inntekt }} {daily_revenue_total:,.0f} - \text{{Kost }} {daily_cost_total:,.0f}) \times 30.42 \text{{ dager}}}}{{46.65 \text{{ mill aksjer}}}} = \mathbf{{\$ {monthly_dps:.3f}}}
+'''
+st.latex(div_formula)
 
 st.divider()
 
 # 8. SENSITIVITET (YIELD)
 st.subheader("📈 Sensitivitetsanalyse")
-st.markdown("Tabellen viser **årlig direkteavkastning (Yield)** gitt dine valg for Scrubber og Fastpris.")
+st.markdown("Tabellen viser **årlig direkteavkastning (Yield)** gitt dine valg.")
 
 col_input1, col_input2 = st.columns(2)
 share_price_nok = col_input1.number_input("Aksjekurs (NOK)", value=82.0)
@@ -177,19 +217,26 @@ data = []
 row = {}
 
 for r in rates:
-    # 1. Spot Rate + Din valgte scrubber bonus (fast eller beregnet)
-    this_spot_tce = (r * premium_pct) + scrubber_bonus
+    # Vi må gjenskape logikken fra formelen over for hvert punkt i tabellen
     
-    # 2. Vektet Rate (hvis du har valgt skip på fastpris)
-    this_total_rev = (this_spot_tce * spot_ships) + (fixed_rate * fixed_ships)
-    this_avg_tce = this_total_rev / total_fleet
+    # 1. Fastpris (Endres ikke)
+    t_fixed = fixed_ships * fixed_rate
     
-    # 3. Utbytte
-    margin = this_avg_tce - breakeven
-    ann_div_usd = (margin * total_fleet * 365) / shares
+    # 2. Spot (Endres med tabellen)
+    t_spot = spot_ships * (r * premium_pct)
+    
+    # 3. Scrubber (Endres ikke - basert på ditt valg)
+    t_scrub = total_fleet * scrubber_bonus
+    
+    # Sum
+    d_rev = t_fixed + t_spot + t_scrub
+    d_profit = d_rev - (total_fleet * breakeven)
+    
+    # Utbytte
+    ann_div_usd = (d_profit * 365) / shares
     ann_div_nok = ann_div_usd * usd_nok
     
-    # 4. Yield
+    # Yield
     yield_pct = (ann_div_nok / share_price_nok) * 100 if share_price_nok > 0 else 0
     
     label = f"Spot-Rate ${r/1000:.0f}k"
@@ -200,7 +247,7 @@ for r in rates:
 
 st.dataframe(pd.DataFrame([row], index=["Yield"]), use_container_width=True)
 
-if scrubber_mode == "Avansert (Drivstoffpriser)":
-    st.info(f"💡 **Info:** Tabellen baserer seg på en beregnet scrubber-fordel på **${scrubber_bonus:,.0f}/dag** (Spread: ${fuel_spread}).")
+if scrubber_mode == "Avansert (Markedspriser)":
+    st.caption(f"Tabellen bruker beregnet scrubber-bonus på ${scrubber_bonus:,.0f}/dag.")
 else:
-    st.info(f"💡 **Info:** Tabellen baserer seg på din faste scrubber-premium på **${scrubber_bonus:,.0f}/dag**.")
+    st.caption(f"Tabellen bruker fast scrubber-bonus på ${scrubber_bonus:,.0f}/dag.")
