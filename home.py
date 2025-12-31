@@ -218,10 +218,15 @@ st.subheader("📈 Sensitivitetsanalyse")
 st.markdown("Tabellen viser **årlig direkteavkastning (Yield)** gitt dine valg.")
 
 col_input1, col_input2 = st.columns(2)
-share_price_nok = col_input1.number_input("Aksjekurs (NOK)", value=82.0)
+share_price_nok = col_input1.number_input("Aksjekurs / Din GAV (NOK)", value=82.0)
 usd_nok = col_input2.number_input("USD/NOK", value=11.1)
 
-rates = [20000, 30000, 40000, 50000, 60000, 80000] 
+# --- NYTT: BEREGN YIELD ON COST FOR ESTIMATET ---
+est_yoc = ((annual_yield_usd * usd_nok) / share_price_nok) * 100 if share_price_nok > 0 else 0
+st.info(f"💰 **Din Yield on Cost** med dagens estimat er: **{est_yoc:.1f}%**")
+# ------------------------------------------------
+
+rates = [20000, 30000, 40000, 50000, 60000, 80000]
 row = {}
 
 for r in rates:
