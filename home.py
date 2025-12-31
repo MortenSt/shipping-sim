@@ -122,7 +122,7 @@ with st.sidebar:
     shares = 46650000 
 
 # 4. HOVEDINNHOLD
-st.title("⛰ Himalaya Shipping: Investorguide")
+st.title("⛰ Himalaya Shipping: Investorguide og utbyttekalkulator")
 
 pdf_url = "https://mortenst.github.io/HSHP/Himalaya_Shipping___investor_guide__29-12-25_.pdf"
 c_link1, c_link2 = st.columns([1, 3])
