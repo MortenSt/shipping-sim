@@ -226,6 +226,23 @@ est_yoc = ((annual_yield_usd * usd_nok) / share_price_nok) * 100 if share_price_
 st.info(f"💰 **Din Yield on Cost** med dagens estimat er: **{est_yoc:.1f}%**")
 # ------------------------------------------------
 
+# --- NY FUNKSJON: MIN BEHOLDNING ---
+st.divider()
+st.markdown("#### 💼 Min Beholdning")
+c_hold1, c_hold2 = st.columns([1, 2])
+my_shares = c_hold1.number_input("Antall aksjer du eier", value=1000, step=500)
+
+my_monthly_usd = monthly_dps * my_shares
+my_monthly_nok = my_monthly_usd * usd_nok
+
+c_hold2.metric(
+    label="Ditt estimerte utbytte (denne måneden)",
+    value=f"NOK {my_monthly_nok:,.0f}",
+    delta=f"USD {my_monthly_usd:,.2f}"
+)
+st.divider()
+# -----------------------------------
+
 rates = [20000, 30000, 40000, 50000, 60000, 80000]
 row = {}
 
